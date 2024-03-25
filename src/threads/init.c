@@ -134,13 +134,48 @@ pintos_init (void)
     run_actions (argv);
   } else {
     // TODO: no command line passed to kernel. Run interactively 
+
+    // starts with a prompt PKUOS> and waits for user input.
+    while (true) {
+      printf("PKUOS> ");
+      char cmd[128];
+      int cnt = 0;
+      while (1) {
+        char c = input_getc();
+        // putchar(c);
+        // As the user types in a printable character, display the character.
+        if (c >= 32 && c <= 126) {
+          // putchar(c);
+          printf("%c", c);
+        }
+        if (c == '\n' || c == '\r') {
+          cmd[cnt] = '\0';
+          break;
+        } else {
+          cmd[cnt++] = c;
+        }
+      }
+      printf("\n");
+      // When a newline is entered, it parses the input and checks if it is whoami. If it is whoami, print your student id. Afterward, the monitor will print the command prompt PKUOS> again in the next line and repeat.
+      if (strcmp (cmd, "whoami") == 0) {
+        printf("2100012986\n");
+      }
+      // If the user input is exit, the monitor will quit to allow the kernel to finish. For the other input, print invalid command. Handling special input such as backspace is not required.
+      else if (strcmp (cmd, "exit") == 0) {
+        break;
+      } else {
+        printf("Invalid command\n");
+      }
+      // 
+      // printf("Command: %s\n", cmd);
+    }
   }
 
   /* Finish up. */
   shutdown ();
   thread_exit ();
 }
-
+
 /** Clear the "BSS", a segment that should be initialized to
    zeros.  It isn't actually stored on disk or zeroed by the
    kernel loader, so we have to zero it ourselves.
