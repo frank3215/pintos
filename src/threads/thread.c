@@ -71,6 +71,18 @@ static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
+// Directly copied from src/tests/internal/list.c
+// with simple modifications
+static bool
+thread_less (const struct list_elem *a_, const struct list_elem *b_,
+            void *aux UNUSED) 
+{
+  const struct thread *a = list_entry (a_, struct thread, elem);
+  const struct thread *b = list_entry (b_, struct thread, elem);
+  
+  return a->priority > b->priority;
+}
+
 /** Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -237,9 +249,22 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+  // list_push_back (&ready_list, &t->elem);
+  // Insert the thread in the list in descending order of priority
+  list_insert_ordered(&ready_list, &t->elem, thread_less, NULL);
   t->status = THREAD_READY;
   intr_set_level (old_level);
+  // NOTE: When a thread is added to the ready list that has a higher priority than the currently running thread,
+  //       the current thread should immediately yield the processor to the new thread.
+  // BUG: The program became stuck.
+  // TODO: Fix the bug
+  if (thread_current ()->priority < t->priority) {
+    // printf("thread_unblock: cur=%d t=%d\n", thread_current ()->priority, t->priority);
+    if (thread_current () != idle_thread) {
+      thread_yield ();
+    }
+    // thread_yield ();
+  }
 }
 
 /** Returns the name of the running thread. */
@@ -307,8 +332,11 @@ thread_yield (void)
   ASSERT (!intr_context ());
 
   old_level = intr_disable ();
-  if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
+  if (cur != idle_thread) {
+    // list_push_back (&ready_list, &cur->elem);
+    // Insert the thread in the list in descending order of priority
+    list_insert_ordered(&ready_list, &cur->elem, thread_less, NULL);
+  }
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
