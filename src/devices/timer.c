@@ -20,6 +20,7 @@
 struct timer_sema {
   struct semaphore sema;
   int64_t ticks;
+  int priority;
   struct list_elem elem;
 };
 struct list timer_sema_list;
@@ -102,7 +103,7 @@ timer_sema_less (const struct list_elem *a_, const struct list_elem *b_,
   const struct timer_sema *a = list_entry (a_, struct timer_sema, elem);
   const struct timer_sema *b = list_entry (b_, struct timer_sema, elem);
   
-  return a->ticks < b->ticks;
+  return a->ticks < b->ticks || (a->ticks == b->ticks && a->priority > b->priority);
 }
 
 /** Sleeps for approximately TICKS timer ticks.  Interrupts must
@@ -130,8 +131,11 @@ timer_sleep (int64_t ticks)
   struct timer_sema ts;
   sema_init (&ts.sema, 0);
   ts.ticks = start + ticks;
+  ts.priority = thread_current ()->priority;
+  // printf("timer_sleep: %d\n", ts.priority);
   // Insert the semaphore in the list in ascending order of ticks
-  // WARN: I don't know if this is the correct way to do so.
+  // NOTE: It passed the test, so it should be working
+  //       But I don't know if I should access priority in timer.c at all
   list_insert_ordered(&timer_sema_list, &ts.elem, timer_sema_less, NULL);
   sema_down (&ts.sema);
 }
