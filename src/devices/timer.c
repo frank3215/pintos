@@ -17,6 +17,13 @@
 #error TIMER_FREQ <= 1000 recommended
 #endif
 
+struct timer_sema {
+  struct semaphore sema;
+  int64_t ticks;
+  struct list_elem elem;
+};
+struct list timer_sema_list;
+
 /** Number of timer ticks since OS booted. */
 static int64_t ticks;
 
@@ -37,6 +44,8 @@ timer_init (void)
 {
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
+
+  list_init (&timer_sema_list);
 }
 
 /** Calibrates loops_per_tick, used to implement brief delays. */
@@ -84,6 +93,18 @@ timer_elapsed (int64_t then)
   return timer_ticks () - then;
 }
 
+// Directly copied from src/tests/internal/list.c
+// with simple modifications
+static bool
+timer_sema_less (const struct list_elem *a_, const struct list_elem *b_,
+            void *aux UNUSED) 
+{
+  const struct timer_sema *a = list_entry (a_, struct timer_sema, elem);
+  const struct timer_sema *b = list_entry (b_, struct timer_sema, elem);
+  
+  return a->ticks < b->ticks;
+}
+
 /** Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
 void
@@ -92,8 +113,27 @@ timer_sleep (int64_t ticks)
   int64_t start = timer_ticks ();
 
   ASSERT (intr_get_level () == INTR_ON);
-  while (timer_elapsed (start) < ticks) 
-    thread_yield ();
+  // TODO: replace busy waiting
+  // while (timer_elapsed (start) < ticks) 
+  //   thread_yield ();
+
+  // If `ticks' is 0, return immediately
+  // ASSERT (ticks != 0);
+  if (ticks <= 0) {
+    return;
+  }
+  // IDEA: Create a semaphore set to 0, add it to the timer semaphore queue, and down it
+  //       Whether to up the semaphore is checked every time tick is updated.
+  // WARN: We are currently initializing the semaphore as local variable
+  //       This make take up all 4KB of stack space, resulting in overflow
+  // TODO: We should allocate semaphores on the heap instead
+  struct timer_sema ts;
+  sema_init (&ts.sema, 0);
+  ts.ticks = start + ticks;
+  // Insert the semaphore in the list in ascending order of ticks
+  // WARN: I don't know if this is the correct way to do so.
+  list_insert_ordered(&timer_sema_list, &ts.elem, timer_sema_less, NULL);
+  sema_down (&ts.sema);
 }
 
 /** Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -171,6 +211,20 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
+
+  // Check if any semaphores in the list have expired
+  // NOTE: We assume the elements are sorted in ascending order of ticks
+  struct list_elem *e;
+  for (e = list_begin (&timer_sema_list); e != list_end (&timer_sema_list); e = list_next (e)) {
+    struct timer_sema *ts = list_entry (e, struct timer_sema, elem);
+    if (ts->ticks == ticks) {
+      list_remove (e);
+      sema_up (&ts->sema);
+    } else {
+      break;
+    }
+  }
+
   thread_tick ();
 }
 
