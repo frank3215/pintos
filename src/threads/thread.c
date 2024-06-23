@@ -83,7 +83,7 @@ void thread_update_priority (struct thread *t) {
   }
 }
 
-struct thread * list_pop_highest_priority_thread(struct list *l) {
+struct thread * list_get_highest_priority_thread(struct list *l) {
   int highest_prority = -1;
   struct thread *next_thread = NULL;
   struct list_elem *e;
@@ -97,7 +97,12 @@ struct thread * list_pop_highest_priority_thread(struct list *l) {
       te = e;
     }
   }
-  list_remove(te);
+  return next_thread;
+}
+
+struct thread * list_pop_highest_priority_thread(struct list *l) {
+  struct thread * next_thread = list_get_highest_priority_thread(l);
+  list_remove(&next_thread->elem);
   return next_thread;
 }
 
