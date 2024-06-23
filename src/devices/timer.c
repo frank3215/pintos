@@ -24,6 +24,7 @@ struct timer_sema {
   struct list_elem elem;
 };
 struct list timer_sema_list;
+struct semaphore timer_sleep_sema;
 
 /** Number of timer ticks since OS booted. */
 static int64_t ticks;
@@ -47,6 +48,20 @@ timer_init (void)
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
 
   list_init (&timer_sema_list);
+  sema_init (&timer_sleep_sema, 1);
+}
+
+void timer_insert_ordered (struct timer_sema *ts) {
+  // list_insert_ordered(&timer_sema_list, &ts->elem, timer_sema_less, NULL);
+  struct list_elem *e;
+  for (e = list_begin (&timer_sema_list); e != list_end (&timer_sema_list); e = list_next (e)) {
+    struct timer_sema *t = list_entry (e, struct timer_sema, elem);
+    if (t -> ticks > ts -> ticks) break; 
+  }
+  enum intr_level old_level;
+  old_level = intr_disable ();
+  list_insert(e, &ts->elem);
+  intr_set_level (old_level);
 }
 
 /** Calibrates loops_per_tick, used to implement brief delays. */
@@ -129,6 +144,10 @@ timer_sleep (int64_t ticks)
   // WARN: We are currently initializing the semaphore as local variable
   //       This make take up all 4KB of stack space, resulting in overflow
   // TODO: We should allocate semaphores on the heap instead
+  // enum intr_level old_level;
+  // old_level = intr_disable ();
+  sema_down (&timer_sleep_sema);
+
   struct timer_sema ts;
   sema_init (&ts.sema, 0);
   ts.ticks = start + ticks;
@@ -137,7 +156,16 @@ timer_sleep (int64_t ticks)
   // Insert the semaphore in the list in ascending order of ticks
   // NOTE: It passed the test, so it should be working
   //       But I don't know if I should access priority in timer.c at all
-  list_insert_ordered(&timer_sema_list, &ts.elem, timer_sema_less, NULL);
+  timer_insert_ordered(&ts);
+
+  if (timer_ticks() >= start + ticks) {
+    list_remove(&ts.elem);
+    sema_up(&ts.sema);
+  }
+  // intr_set_level (old_level);
+
+  sema_up(&timer_sleep_sema);
+  
   sema_down (&ts.sema);
 }
 
@@ -226,7 +254,7 @@ timer_interrupt (struct intr_frame *args UNUSED)
       list_remove (e);
       sema_up (&ts->sema);
     } else {
-      break;  
+      break;
     }
   }
 
