@@ -114,6 +114,22 @@ void lock_update_holder(struct lock *l) {
   lock_insert_to_holder(l);
 }
 
+void lock_update_thread(struct lock *l, struct thread *t) {
+  list_remove(&t -> waitelem);
+  lock_insert_thread(l, t);
+}
+
+void lock_recursive_update(struct lock *l) {
+  while (l && l->holder) { // implement priority donation
+    lock_update_holder(l); // update lock->holder's priority
+    if (l->holder->acquiring_lock) {
+      // update l->holder->acquiring_lock's priority
+      lock_update_thread(l->holder->acquiring_lock, l->holder);
+    }
+    l = l->holder->acquiring_lock;
+  }
+}
+
 /** Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
    manipulating it:
@@ -290,9 +306,8 @@ lock_acquire (struct lock *lock)
   enum intr_level old_level;
   old_level = intr_disable (); // disable interrupts: may harm performance
   lock_insert_thread(lock, thread_current());
-  if (lock->holder) { // implement priority donation
-    lock_update_holder(lock);
-  }
+  lock_recursive_update(lock);
+  thread_current() -> acquiring_lock = lock;
   intr_set_level (old_level);
 
   // try to down sema
@@ -302,6 +317,7 @@ lock_acquire (struct lock *lock)
   lock->holder = thread_current ();
 
   old_level = intr_disable ();
+  thread_current() -> acquiring_lock = NULL;
   lock->holder = thread_current ();
   // stop donating priority & get donated priority
   lock_remove_thread(lock, thread_current () );

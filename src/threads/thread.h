@@ -96,6 +96,7 @@ struct thread
     int real_priority; // If Donated Priority
     struct list locklist; // Acquired locks: used in calculating donated priotity
     int donated_priority;
+    struct lock *acquiring_lock;
     // v useless: is_donated_priority iff donated_priority != -1
     // bool is_donated_priority;
     // | useless: is donating priority iff acquiring lock;
