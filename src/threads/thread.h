@@ -93,6 +93,17 @@ struct thread
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /**< List element. */
 
+    int real_priority; // If Donated Priority
+    struct list locklist; // Acquired locks: used in calculating donated priotity
+    int donated_priority;
+    // v useless: is_donated_priority iff donated_priority != -1
+    // bool is_donated_priority;
+    // | useless: is donating priority iff acquiring lock;
+    // v          thread that receives priority is thread holding lock;
+    // bool is_donating_priority;
+    // struct thread *donating_priority_to;
+    struct list_elem waitelem;
+
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /**< Page directory. */
@@ -137,5 +148,7 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+void thread_update_priority(struct thread *);
 
 #endif /**< threads/thread.h */

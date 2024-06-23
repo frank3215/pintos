@@ -120,6 +120,7 @@ timer_sleep (int64_t ticks)
 
   // If `ticks' is 0, return immediately
   // ASSERT (ticks != 0);
+  // printf("[%d]", ticks);
   if (ticks <= 0) {
     return;
   }
@@ -209,7 +210,7 @@ timer_print_stats (void)
 {
   printf ("Timer: %"PRId64" ticks\n", timer_ticks ());
 }
-
+
 /** Timer interrupt handler. */
 static void
 timer_interrupt (struct intr_frame *args UNUSED)
@@ -225,7 +226,7 @@ timer_interrupt (struct intr_frame *args UNUSED)
       list_remove (e);
       sema_up (&ts->sema);
     } else {
-      break;
+      break;  
     }
   }
 

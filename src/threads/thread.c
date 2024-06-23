@@ -71,6 +71,36 @@ static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
+// semaphore to protect read/writes
+static struct semaphore is_yielding;
+
+void thread_update_priority (struct thread *t) {
+  // thread may or may not be in ready_list
+  if (t->donated_priority > t->real_priority) {
+    t->priority = t->donated_priority;
+  } else {
+    t->priority = t->real_priority;
+  }
+}
+
+struct thread * list_pop_highest_priority_thread(struct list *l) {
+  int highest_prority = -1;
+  struct thread *next_thread = NULL;
+  struct list_elem *e;
+  struct list_elem *te;
+  for (e = list_begin (l); e != list_end (l); e = list_next (e)) {
+    struct thread *t = list_entry (e, struct thread, elem);
+    thread_update_priority(t);
+    if (t -> priority > highest_prority) {
+      highest_prority = t -> priority;
+      next_thread = t;
+      te = e;
+    }
+  }
+  list_remove(te);
+  return next_thread;
+}
+
 /** Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -98,6 +128,9 @@ thread_init (void)
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
+
+  // My initialization
+  sema_init (&is_yielding, 1);
 }
 
 /** Starts preemptive thread scheduling by enabling interrupts.
@@ -201,6 +234,11 @@ thread_create (const char *name, int priority,
   /* Add to run queue. */
   thread_unblock (t);
 
+  // yield current thread?
+  // - The thread might have created a thread with higher
+  //   priority, we should run that thread fisrst.
+  thread_yield ();
+
   return tid;
 }
 
@@ -237,6 +275,7 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
+  // we don't need to keep the ready_list in order.
   list_push_back (&ready_list, &t->elem);
   t->status = THREAD_READY;
   intr_set_level (old_level);
@@ -307,8 +346,11 @@ thread_yield (void)
   ASSERT (!intr_context ());
 
   old_level = intr_disable ();
-  if (cur != idle_thread) 
+  if (cur != idle_thread) {
+    // NOTE: We don't keep the ready_list in order.
+    //       It is traversed when finding next thread to run.
     list_push_back (&ready_list, &cur->elem);
+  }
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -335,7 +377,13 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
-  thread_current ()->priority = new_priority;
+  struct thread *t = thread_current ();
+  t->real_priority = new_priority;
+  if (t->donated_priority > new_priority)
+    t->priority = t->donated_priority;
+  else
+    t->priority = new_priority;
+  thread_yield();
 }
 
 /** Returns the current thread's priority. */
@@ -464,6 +512,10 @@ init_thread (struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->magic = THREAD_MAGIC;
 
+  t->real_priority = priority;
+  list_init(&t->locklist);
+  t->donated_priority = -1;
+
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
   intr_set_level (old_level);
@@ -492,8 +544,16 @@ next_thread_to_run (void)
 {
   if (list_empty (&ready_list))
     return idle_thread;
-  else
-    return list_entry (list_pop_front (&ready_list), struct thread, elem);
+  else {
+    //   Finds the frontmost thread with the highest priority in ready_list
+    //   Because thread might update other threads(may be in the ready_list or not)' priority,
+    // and because we can't know whether an element is in a list,
+    // we can't keep the list in descending priority.
+    //   Instead, we iterate through the list.
+    return list_pop_highest_priority_thread(&ready_list);
+    // v no: the list is not in order.
+    // return list_entry (list_pop_front (&ready_list), struct thread, elem);
+  }
 }
 
 /** Completes a thread switch by activating the new thread's page
